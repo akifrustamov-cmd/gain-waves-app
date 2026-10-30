@@ -230,11 +230,16 @@ async function renderHome() {
         <li><div class="grow"><p>${esc(summarise(w, ex))}</p>
           <p class="muted">${esc(w.performed_on)}${w.capped ? ' · weekly or daily limit reached' : ''}${w.notes ? ' · ' + esc(w.notes) : ''}</p></div>
           <span class="xp">+${fmt(w.xp)} XP</span>
-          <span class="row-actions">${w.performed_on >= daysAgo(7) ? `<a class="link-btn" href="#edit/${w.id}" aria-label="Edit workout">Edit</a>` : ''}
-          <button class="link-btn" data-del="${w.id}" aria-label="Delete workout">Delete</button></span></li>`).join('')}</ul>`
+          <span class="row-actions">${w.performed_on >= daysAgo(7) ? `<a class="act act--edit" href="#edit/${w.id}">Edit</a>` : ''}
+          <button type="button" class="act act--del" data-del="${w.id}">Delete</button></span></li>`).join('')}</ul>`
         : '<p class="muted">No workouts yet. Log your first one to start earning XP.</p>'}
     </section>`;
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!b.classList.contains('is-armed')) {
+      b.classList.add('is-armed'); b.textContent = 'Confirm?';
+      setTimeout(() => { b.classList.remove('is-armed'); b.textContent = 'Delete'; }, 4000);
+      return;
+    }
     b.disabled = true;
     const { error } = await sb.from('workouts').delete().eq('id', b.dataset.del);
     if (error) { toast(error.message); b.disabled = false; return; }
@@ -293,7 +298,7 @@ async function renderLog(editId) {
     planEl.innerHTML = plan.map((b, bi) => {
       const e = ex[b.id], cardio = e.category === 'cardio', bw = e.category === 'bodyweight';
       return `<article class="card ex">
-        <div class="ex__head">${icon(e.icon)}<h3>${esc(e.name)}</h3><button type="button" class="link-btn" data-rmex="${bi}" aria-label="Remove ${esc(e.name)}">Remove</button></div>
+        <div class="ex__head">${icon(e.icon)}<h3>${esc(e.name)}</h3><button type="button" class="act act--del" data-rmex="${bi}" aria-label="Remove ${esc(e.name)}">Remove</button></div>
         <div class="sets">
           <div class="set set--head"><span>Set</span><span>${cardio ? 'Minutes' : 'Reps'}</span><span>${cardio ? 'Km (optional)' : bw ? 'Extra kg' : 'Kg'}</span><span>XP</span><span></span></div>
           ${b.sets.map((st, si) => `<div class="set">
