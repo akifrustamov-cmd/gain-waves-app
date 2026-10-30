@@ -64,7 +64,7 @@ function setChrome(signedIn) {
   const top = document.getElementById('top-xp');
   top.hidden = !signedIn;
   if (signedIn && state.profile) top.textContent = `${levelOf(state.profile.xp).name} · ${fmt(state.profile.xp)} XP`;
-  const tab = location.hash.slice(1) || 'home';
+  const tab = (location.hash.slice(1) || 'home').replace(/^edit\/.*/, 'log');
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
 }
 function busy(form, on) { form.querySelectorAll('button').forEach(b => { b.disabled = on; }); }
@@ -87,6 +87,7 @@ async function route() {
   if (!state.profile) { setChrome(false); return renderOnboard(); }
   const tab = location.hash.slice(1) || 'home';
   setChrome(true);
+  if (tab.startsWith('edit/')) return renderLog(tab.slice(5));
   const views = { home: renderHome, log: renderLog, gym: renderGym, shelf: renderShelf, profile: renderProfile };
   (views[tab] || renderHome)();
 }
@@ -229,7 +230,8 @@ async function renderHome() {
         <li><div class="grow"><p>${esc(summarise(w, ex))}</p>
           <p class="muted">${esc(w.performed_on)}${w.capped ? ' · weekly or daily limit reached' : ''}${w.notes ? ' · ' + esc(w.notes) : ''}</p></div>
           <span class="xp">+${fmt(w.xp)} XP</span>
-          <button class="link-btn" data-del="${w.id}" aria-label="Delete workout">Delete</button></li>`).join('')}</ul>`
+          <span class="row-actions">${w.performed_on >= daysAgo(7) ? `<a class="link-btn" href="#edit/${w.id}" aria-label="Edit workout">Edit</a>` : ''}
+          <button class="link-btn" data-del="${w.id}" aria-label="Delete workout">Delete</button></span></li>`).join('')}</ul>`
         : '<p class="muted">No workouts yet. Log your first one to start earning XP.</p>'}
     </section>`;
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
@@ -241,13 +243,26 @@ async function renderHome() {
 }
 
 // ---- log workout: pick exercises from icons, then fill in each set ----
-async function renderLog() {
+async function renderLog(editId) {
   let ex;
   try { ex = await loadExercises(); } catch (e) { view.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
   const plan = [];   // [{ id, sets: [{reps, weight_kg, minutes, distance_km}] }]
+  let editing = null;
+  if (editId) {
+    const { data: w, error } = await sb.from('workouts').select('id, performed_on, notes, xp, workout_sets(exercise_id, set_no, reps, weight_kg, minutes, distance_km)').eq('id', editId).maybeSingle();
+    if (error || !w) { view.innerHTML = `<div class="card"><h2>Workout not found</h2><a class="btn" href="#home">Back to home</a></div>`; return; }
+    if (w.performed_on < daysAgo(7)) { view.innerHTML = `<div class="card"><h2>Too old to edit</h2><p class="muted">Workouts can be edited for 7 days.</p><a class="btn" href="#home">Back to home</a></div>`; return; }
+    editing = w;
+    // Consecutive sets of the same exercise become one block, in logged order.
+    (w.workout_sets || []).sort((a, b) => a.set_no - b.set_no).forEach(st => {
+      const last = plan[plan.length - 1];
+      const row = { reps: st.reps ?? '', weight_kg: st.weight_kg ?? '', minutes: st.minutes ?? '', distance_km: st.distance_km ?? '' };
+      if (last && last.id === st.exercise_id) last.sets.push(row); else plan.push({ id: st.exercise_id, sets: [row] });
+    });
+  }
   const groups = MUSCLES.map(m => [m, Object.values(ex).filter(e => e.muscle === m)]).filter(([, l]) => l.length);
   view.innerHTML = `
-    <div><p class="eyebrow">Log</p><h1>Build your workout</h1></div>
+    <div><p class="eyebrow">${editing ? `Editing · ${esc(editing.performed_on)} · ${fmt(editing.xp)} XP now` : 'Log'}</p><h1>${editing ? 'Edit workout' : 'Build your workout'}</h1></div>
     <p class="muted">Tap the exercises you did, then fill in each set. XP is calculated from your sets.</p>
     <section id="lg-plan" class="plan"></section>
     <section class="card">
@@ -258,10 +273,11 @@ async function renderLog() {
     </section>
     <section class="card">
       <label>Date<select id="lg-date">${[0,1,2,3,4,5,6,7].map(d => `<option value="${daysAgo(d)}">${d === 0 ? 'Today' : d === 1 ? 'Yesterday' : daysAgo(d)}</option>`).join('')}</select></label>
-      <label>Notes (optional)<input id="lg-notes" maxlength="200" placeholder="Felt strong today" /></label>
+      <label>Notes (optional)<input id="lg-notes" maxlength="200" placeholder="Felt strong today" value="${esc(editing ? editing.notes || '' : '')}" /></label>
     </section>
     <div class="savebar"><div><b id="lg-total">0 XP</b><span class="muted" id="lg-sub">Add an exercise to start</span></div>
-      <button class="btn" id="lg-save" type="button">Save workout</button></div>
+      <button class="btn" id="lg-save" type="button">${editing ? 'Save changes' : 'Save workout'}</button></div>
+    ${editing ? '<a class="btn btn--ghost" href="#home">Cancel</a>' : ''}
     <p class="error" id="lg-err" hidden></p>
     <p class="muted">Up to ${fmt(DAILY_CAP)} XP a day and ${fmt(WEEKLY_CAP)} XP a week (Monday to Sunday). +${WORKOUT_BONUS} XP for every completed workout.</p>`;
 
@@ -327,19 +343,21 @@ async function renderLog() {
     }
     const btn = document.getElementById('lg-save'); btn.disabled = true;
     const before = levelOf(state.profile.xp);
-    const { data, error } = await sb.rpc('log_workout', {
-      p_performed_on: document.getElementById('lg-date').value,
-      p_notes: document.getElementById('lg-notes').value, p_sets: sets,
-    });
+    const args = { p_performed_on: document.getElementById('lg-date').value, p_notes: document.getElementById('lg-notes').value, p_sets: sets };
+    const { data, error } = editing
+      ? await sb.rpc('edit_workout', { p_workout_id: editing.id, ...args })
+      : await sb.rpc('log_workout', args);
     btn.disabled = false;
     if (error) return fail(error.message);
     const r = data[0];
     await loadProfile();
     const after = levelOf(state.profile.xp);
     toast(after.n > before.n ? `Level up: you're now ${after.name}` :
+      editing ? `Workout updated: ${fmt(r.xp)} XP${r.capped ? ' (limit reached)' : ''}` :
       r.capped ? `+${fmt(r.xp)} XP (limit reached; this workout was worth ${fmt(r.raw_xp)})` : `+${fmt(r.xp)} XP`);
     location.hash = '#home';
   };
+  if (editing) document.getElementById('lg-date').value = editing.performed_on;
   draw();
 }
 
