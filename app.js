@@ -12,7 +12,7 @@ const LEVELS = [
 const DAILY_CAP = 800, WEEKLY_CAP = 1200, WORKOUT_BONUS = 20;
 const MUSCLES = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio'];
 
-const state = { session: null, profile: null, gym: null, exercises: null };
+const state = { session: null, profile: null, gym: null, exercises: null, partner: null, isAdmin: false };
 const view = document.getElementById('view');
 
 // ---- helpers ----
@@ -64,7 +64,7 @@ function setChrome(signedIn) {
   const top = document.getElementById('top-xp');
   top.hidden = !signedIn;
   if (signedIn && state.profile) top.textContent = `${levelOf(state.profile.xp).name} · ${fmt(state.profile.xp)} XP`;
-  const tab = (location.hash.slice(1) || 'home').replace(/^edit\/.*/, 'log');
+  const tab = (location.hash.slice(1) || 'home').replace(/^edit\/.*/, 'log').replace(/^shelf$/, 'rewards');
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
 }
 function busy(form, on) { form.querySelectorAll('button').forEach(b => { b.disabled = on; }); }
@@ -78,36 +78,53 @@ async function loadProfile() {
 }
 
 // ---- router ----
+const intent = {
+  get() { try { return localStorage.getItem('gw-intent'); } catch (e) { return null; } },
+  set(v) { try { v ? localStorage.setItem('gw-intent', v) : localStorage.removeItem('gw-intent'); } catch (e) {} },
+};
+async function loadRoles() {
+  const [{ data: partner }, { data: admin }] = await Promise.all([
+    sb.from('partners').select('*').eq('user_id', state.session.user.id).maybeSingle(),
+    sb.rpc('is_admin'),
+  ]);
+  state.partner = partner || null;
+  state.isAdmin = !!admin;
+}
 async function route() {
   view.onclick = null;
   const { data } = await sb.auth.getSession();
   state.session = data.session;
-  if (!state.session) { setChrome(false); return renderAuth(); }
-  try { await loadProfile(); } catch (e) { view.innerHTML = `<p class="error">Couldn't load your profile. ${esc(e.message)}</p>`; return; }
-  if (!state.profile) { setChrome(false); return renderOnboard(); }
+  if (!state.session) { setChrome(false); return renderAuth('signin', intent.get() === 'partner'); }
+  try { await Promise.all([loadProfile(), loadRoles()]); }
+  catch (e) { view.innerHTML = `<p class="error">Couldn't load your account. ${esc(e.message)}</p>`; return; }
   const tab = location.hash.slice(1) || 'home';
+  if (tab === 'admin' && state.isAdmin) { setChrome(!!state.profile); return renderAdmin(); }
+  if (tab === 'partner' || (!state.profile && (state.partner || intent.get() === 'partner'))) { setChrome(!!state.profile); return renderPartner(); }
+  if (!state.profile) { setChrome(false); return renderOnboard(); }
   setChrome(true);
   if (tab.startsWith('edit/')) return renderLog(tab.slice(5));
-  const views = { home: renderHome, log: renderLog, gym: renderGym, shelf: renderShelf, profile: renderProfile };
+  const views = { home: renderHome, log: renderLog, gym: renderGym, rewards: renderRewards, shelf: renderRewards, profile: renderProfile };
   (views[tab] || renderHome)();
 }
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((evt) => { if (evt === 'SIGNED_IN' || evt === 'SIGNED_OUT') route(); });
 
 // ---- auth ----
-function renderAuth(mode = 'signin') {
+function renderAuth(mode = 'signin', partner = false) {
   const creating = mode === 'signup';
   view.innerHTML = `
-    <div><p class="eyebrow">No pain, no gain waves</p><h1>${creating ? 'Join free' : 'Welcome back'}</h1></div>
-    <p class="muted">${creating ? 'Create your account, then earn every level from Rookie to Freak.' : 'Sign in to log your training and earn XP.'}</p>
+    <div><p class="eyebrow">${partner ? 'Partner login' : 'No pain, no gain waves'}</p><h1>${partner ? (creating ? 'Become a partner' : 'Partner sign in') : creating ? 'Join free' : 'Welcome back'}</h1></div>
+    <p class="muted">${partner ? 'For suppliers, gyms and online stores working with GAIN WAVES.' : creating ? 'Create your account, then earn every level from Rookie to Freak.' : 'Sign in to log your training and earn XP.'}</p>
     <form id="auth-form" class="card" novalidate>
-      <label>Email<input id="auth-email" type="email" autocomplete="email" required placeholder="you@example.com" /></label>
+      <label>Email<input id="auth-email" type="email" autocomplete="email" required placeholder="${partner ? 'sales@yourbrand.com' : 'you@example.com'}" /></label>
       <label>Password<input id="auth-pass" type="password" autocomplete="${creating ? 'new-password' : 'current-password'}" minlength="8" required /></label>
       <p class="error" id="auth-err" hidden></p>
       <button class="btn" type="submit">${creating ? 'Create account' : 'Sign in'}</button>
     </form>
-    <button class="link-btn" id="auth-switch">${creating ? 'Already a member? Sign in' : 'New here? Join free'}</button>`;
-  document.getElementById('auth-switch').onclick = () => renderAuth(creating ? 'signin' : 'signup');
+    <button class="link-btn" id="auth-switch">${creating ? 'Already have an account? Sign in' : partner ? 'New partner? Create an account' : 'New here? Join free'}</button>
+    <button class="link-btn" id="auth-role">${partner ? 'I train: member login' : 'Supplier, gym or online store? Partner login'}</button>`;
+  document.getElementById('auth-switch').onclick = () => renderAuth(creating ? 'signin' : 'signup', partner);
+  document.getElementById('auth-role').onclick = () => { intent.set(partner ? null : 'partner'); renderAuth('signin', !partner); };
   const form = document.getElementById('auth-form');
   form.onsubmit = async e => {
     e.preventDefault();
@@ -123,7 +140,7 @@ function renderAuth(mode = 'signin') {
       view.innerHTML = `<div class="card"><h2>Check your email</h2><p class="muted">We sent a confirmation link to ${esc(email)}. Open it, then come back and sign in.</p></div>`;
       return;
     }
-    location.hash = '#home'; route();
+    location.hash = partner ? '#partner' : '#home'; route();
   };
 }
 
@@ -382,26 +399,6 @@ async function renderGym() {
     <p class="muted">Only members who chose to be shown appear here. Change this in your profile.</p>`;
 }
 
-// ---- brand shelf ----
-async function renderShelf() {
-  const lv = levelOf(state.profile.xp);
-  const { data: brands, error } = await sb.from('brands').select('id, name, tagline, sponsored, shelf_rank, offers(id, title, description, min_level, member_discount_pct)').order('shelf_rank');
-  view.innerHTML = `
-    <div><p class="eyebrow">Your level: ${lv.name}</p><h1>The shelf</h1></div>
-    <p class="muted">Higher levels unlock better prices and limited drops. The shop opens soon; these are your member prices.</p>
-    ${error ? `<p class="error">${esc(error.message)}</p>` : (brands || []).map(b => `
-      <section class="card">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-          <h2>${esc(b.name)}</h2>${b.sponsored ? '<span class="sponsored">Sponsored</span>' : ''}</div>
-        ${b.tagline ? `<p class="muted">${esc(b.tagline)}</p>` : ''}
-        ${(b.offers || []).sort((a, c) => a.min_level - c.min_level).map(o => {
-          const open = lv.n >= o.min_level;
-          return `<div class="offer ${open ? '' : 'locked'}"><div class="grow"><p>${esc(o.title)}</p>
-            <p class="muted">${open ? esc(o.description || '') : `Unlocks at ${LEVELS[o.min_level - 1].name}`}</p></div>
-            <span class="offer__pct">${o.member_discount_pct ? `−${o.member_discount_pct} %` : ''}</span></div>`;
-        }).join('')}
-      </section>`).join('')}`;
-}
 
 // ---- profile ----
 async function renderProfile() {
@@ -414,30 +411,40 @@ async function renderProfile() {
       <label>Gym<select id="pf-gym">${(gyms || []).map(g => `<option value="${g.id}" ${g.id === p.gym_id ? 'selected' : ''}>${esc(g.name)} · ${esc(g.city)}</option>`).join('')}</select></label>
       <label>Favourite sport<input id="pf-sport" value="${esc(p.favourite_sport || '')}" /></label>
       <label>Bio<textarea id="pf-bio" maxlength="160" rows="3">${esc(p.bio || '')}</textarea></label>
+      <label>Instagram (optional)<input id="pf-ig" value="${esc(p.instagram || '')}" placeholder="your.handle" autocapitalize="off" /></label>
+      <label>Followers (optional)<input id="pf-fol" type="number" inputmode="numeric" min="0" value="${p.followers ?? ''}" placeholder="12500" /></label>
+      <label class="check"><input id="pf-natty" type="checkbox" ${p.natty_pledge ? 'checked' : ''} /> I train drug-free (Natty pledge). This earns the Natty medal.</label>
       <label class="check"><input id="pf-board" type="checkbox" ${p.show_on_leaderboard ? 'checked' : ''} /> Show me on my gym's leaderboard</label>
       <p class="error" id="pf-err" hidden></p>
       <button class="btn" type="submit">Save profile</button>
     </form>
+    <p class="muted">Big following and top level? We invite our strongest members to become GAIN WAVES ambassadors.</p>
+    ${state.isAdmin ? '<a class="btn btn--ghost" href="#admin">Admin: partners and ambassadors</a>' : ''}
+    ${state.partner ? '<a class="btn btn--ghost" href="#partner">Partner dashboard</a>' : ''}
     <button class="btn btn--ghost" id="pf-out">Sign out</button>
     <p class="muted">To delete your account and all workout data, email contact.eu@wavesint.com.</p>`;
   const form = document.getElementById('pf-form');
   form.onsubmit = async e => {
     e.preventDefault();
     const err = document.getElementById('pf-err'); err.hidden = true;
+    const fail = m => { err.textContent = m; err.hidden = false; busy(form, false); };
     const display_name = document.getElementById('pf-name').value.trim();
-    if (display_name.length < 2) { err.textContent = 'Enter a display name.'; err.hidden = false; return; }
+    if (display_name.length < 2) return fail('Enter a display name.');
+    const ig = document.getElementById('pf-ig').value.trim().replace(/^@/, '');
+    if (ig && !/^[A-Za-z0-9._]{1,30}$/.test(ig)) return fail('Instagram handle: letters, numbers, dots and underscores only.');
+    const fol = document.getElementById('pf-fol').value;
     busy(form, true);
     const { error } = await sb.from('profiles').update({
       display_name, gym_id: document.getElementById('pf-gym').value,
       favourite_sport: document.getElementById('pf-sport').value.trim() || null,
       bio: document.getElementById('pf-bio').value.trim() || null,
+      instagram: ig || null, followers: fol === '' ? null : Math.max(0, parseInt(fol, 10) || 0),
+      natty_pledge: document.getElementById('pf-natty').checked,
       show_on_leaderboard: document.getElementById('pf-board').checked,
     }).eq('id', p.id);
     busy(form, false);
-    if (error) { err.textContent = error.message; err.hidden = false; return; }
+    if (error) return fail(error.message);
     toast('Profile saved'); route();
   };
-  document.getElementById('pf-out').onclick = async () => { await sb.auth.signOut(); location.hash = ''; };
+  document.getElementById('pf-out').onclick = async () => { intent.set(null); await sb.auth.signOut(); location.hash = ''; };
 }
-
-route();
