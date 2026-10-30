@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111214" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>GAIN WAVES</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand__mark"></span>GAIN WAVES</div>
+    <div class="top__xp" id="top-xp" hidden></div>
+  </header>
+
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <nav class="tabs" id="tabs" hidden>
+    <a href="#home" data-tab="home"><span class="tabs__i">◆</span>Home</a>
+    <a href="#log" data-tab="log"><span class="tabs__i">+</span>Log</a>
+    <a href="#gym" data-tab="gym"><span class="tabs__i">▲</span>Gym</a>
+    <a href="#shelf" data-tab="shelf"><span class="tabs__i">▤</span>Shelf</a>
+    <a href="#profile" data-tab="profile"><span class="tabs__i">●</span>Profile</a>
+  </nav>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
