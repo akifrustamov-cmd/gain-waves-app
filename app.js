@@ -10,6 +10,7 @@ const LEVELS = [
   { n: 4, name: 'Freak', min: 63000 },
 ];
 const DAILY_CAP = 800, WEEKLY_CAP = 1200, WORKOUT_BONUS = 20;
+const LEVELS_DISCOUNT = { 1: 5, 2: 10, 3: 15, 4: 20 };   // mirrors public.level_discounts for the Home button
 const MUSCLES = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio'];
 
 const state = { session: null, profile: null, gym: null, exercises: null, partner: null, isAdmin: false };
@@ -64,7 +65,7 @@ function setChrome(signedIn) {
   const top = document.getElementById('top-xp');
   top.hidden = !signedIn;
   if (signedIn && state.profile) top.textContent = `${levelOf(state.profile.xp).name} · ${fmt(state.profile.xp)} XP`;
-  const tab = (location.hash.slice(1) || 'home').replace(/^edit\/.*/, 'log').replace(/^shelf$/, 'rewards');
+  const tab = (location.hash.slice(1) || 'home').replace(/^edit\/.*/, 'log').replace(/^shelf$/, 'store');
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
 }
 function busy(form, on) { form.querySelectorAll('button').forEach(b => { b.disabled = on; }); }
@@ -103,11 +104,16 @@ async function route() {
   if (!state.profile) { setChrome(false); return renderOnboard(); }
   setChrome(true);
   if (tab.startsWith('edit/')) return renderLog(tab.slice(5));
-  const views = { home: renderHome, log: renderLog, gym: renderGym, rewards: renderRewards, shelf: renderRewards, profile: renderProfile };
+  const views = { home: renderHome, log: renderLog, gym: renderGym, store: () => renderStore(), shelf: () => renderStore(), rewards: renderRewards, profile: renderProfile };
   (views[tab] || renderHome)();
 }
 window.addEventListener('hashchange', route);
-sb.auth.onAuthStateChange((evt) => { if (evt === 'SIGNED_IN' || evt === 'SIGNED_OUT') route(); });
+// Supabase also fires SIGNED_IN when the tab becomes visible again; only re-route when the user really changes,
+// so switching apps never wipes a half-filled form.
+sb.auth.onAuthStateChange((evt, session) => {
+  const was = state.session && state.session.user.id, now = session && session.user.id;
+  if ((evt === 'SIGNED_IN' || evt === 'SIGNED_OUT') && was !== now) route();
+});
 
 // ---- auth ----
 function renderAuth(mode = 'signin', partner = false) {
@@ -241,7 +247,8 @@ async function renderHome() {
       <div class="stat"><b>${weekSets}</b><span>sets this week</span></div>
       <div class="stat"><b>${fmt(weekXp)}</b><span>of ${fmt(WEEKLY_CAP)} XP this week</span></div>
     </div>
-    <a class="btn" href="#log">Log a workout</a>
+    ${await homeChallengeHtml()}
+    <div class="btnrow"><a class="btn" href="#log">Log a workout</a><a class="btn btn--ghost" href="#store">Store · −${(LEVELS_DISCOUNT[levelOf(p.xp).n])} %</a></div>
     <section class="card"><h2>Recent workouts</h2>
       ${rows && rows.length ? `<ul class="list">${rows.slice(0, 10).map(w => `
         <li><div class="grow"><p>${esc(summarise(w, ex))}</p>
@@ -262,6 +269,17 @@ async function renderHome() {
     if (error) { toast(error.message); b.disabled = false; return; }
     toast('Workout deleted'); route();
   });
+}
+
+async function homeChallengeHtml() {
+  const { data } = await sb.rpc('my_challenges');
+  const c = (data || [])[0];
+  if (!c) return '';
+  const pct = Math.min(100, Math.round((Number(c.progress) / Number(c.goal)) * 100));
+  return `<a class="card homechal" href="#rewards"><p class="eyebrow">${c.featured ? 'Featured challenge' : 'Challenge'} · ${esc(c.brand)}</p>
+    <h2>${esc(c.title)}</h2><p class="muted">Top ${c.winners} win ${esc(c.reward)}</p>
+    <div class="bar bar--thin"><span style="width:${pct}%"></span></div>
+    <p class="chal__stat">${c.joined ? `Joined · ${fmt(c.progress)} / ${fmt(c.goal)}` : 'Tap to join'}</p></a>`;
 }
 
 // ---- log workout: pick exercises from icons, then fill in each set ----
