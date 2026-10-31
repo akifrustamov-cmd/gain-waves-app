@@ -47,7 +47,7 @@ async function renderRewards(period = 'all', openBoard = null) {
         <p class="sp__brand">${esc(c.brand)}</p>
         <h2>${esc(c.title)}</h2>
         ${c.description ? `<p class="muted">${esc(c.description)}</p>` : ''}
-        <div class="chal__prize"><span>Top ${c.winners} win</span><b>${esc(c.reward)}</b>${Number(c.reward_value_eur) ? `<s>${eur(c.reward_value_eur)}</s>` : ''}</div>
+        <div class="chal__prize">${c.prize_image ? `<span class="thumb chal__img"><img src="${esc(c.prize_image)}" alt="" loading="lazy" /></span>` : ''}<span>Top ${c.winners} win</span><b>${esc(c.reward)}</b>${Number(c.reward_value_eur) ? `<s>${eur(c.reward_value_eur)}</s>` : ''}</div>
         <div class="bar bar--thin"><span style="width:${pct}%"></span></div>
         <p class="chal__stat"><b>${fmt(c.progress)} / ${fmt(c.goal)}</b> ${c.metric === 'exercise_reps' ? esc((c.exercise || '').toLowerCase()) + ' reps' : METRICS[c.metric]}${done ? ' · goal reached' : ''}
           ${c.joined && c.my_rank ? ` · <span class="gold">#${c.my_rank} of ${c.participants}</span>` : c.participants ? ` · ${c.participants} joined` : ''}</p>
@@ -225,25 +225,34 @@ async function renderPartner() {
   } else {
     let { data: brand } = await sb.from('brands').select('id, name, tagline').eq('partner_id', pa.id).maybeSingle();
     const { data: prods } = brand ? await sb.from('products').select('*').eq('brand_id', brand.id).order('created_at') : { data: [] };
+    partnerProducts = prods || [];
     body = `
       <section class="card"><h2>Your products</h2>
-        ${(prods || []).length ? `<ul class="list">${prods.map(pr => `<li><div class="grow"><p>${esc(pr.name)} <span class="muted">${esc(pr.size || '')}</span></p>
-          <p class="muted">${eur(pr.price_eur)} · extra −${pr.extra_discount_pct} % · from ${LEVELS[pr.min_level - 1].name}</p></div>
-          <span class="row-actions"><button type="button" class="act act--del" data-delp="${pr.id}">Delete</button></span></li>`).join('')}</ul>`
+        ${partnerProducts.length ? `<ul class="list">${partnerProducts.map(pr => `<li><div class="thumb">${photoTag(pr)}</div>
+          <div class="grow"><p>${esc(pr.name)} <span class="muted">${esc(pr.size || '')}</span></p>
+          <p class="muted">${eur(pr.price_eur)} · extra −${pr.extra_discount_pct} % · from ${LEVELS[pr.min_level - 1].name}${pr.active ? '' : ' · <b>hidden</b>'}</p></div>
+          <span class="row-actions"><button type="button" class="act act--edit" data-editp="${pr.id}">Edit</button>
+          <button type="button" class="act act--del" data-delp="${pr.id}">Delete</button></span></li>`).join('')}</ul>`
           : '<p class="muted">No products yet. Add your first one below.</p>'}
       </section>
-      <form id="pp-form" class="card" novalidate><h2>Add a product</h2>
+      <form id="pp-form" class="card" novalidate data-edit=""><h2 id="pp-h">Add a product</h2>
+        <label>Photo
+          <span class="photo-pick"><span class="photo-pick__img" id="pp-prev"><span class="noimg">No photo</span></span>
+          <span class="photo-pick__txt">Square photos look best. It is cropped to a square like in the Store.</span></span>
+          <input id="pp-photo" type="file" accept="image/*" /></label>
         <label>Product name<input id="pp-name" placeholder="Whey Isolate Vanilla" /></label>
         <label>Category<select id="pp-cat">${Object.entries(CATEGORIES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
         <label>Size<input id="pp-size" placeholder="1 kg" /></label>
         <label>Normal price (€)<input id="pp-price" type="number" inputmode="decimal" min="0.5" step="0.01" placeholder="39.90" /></label>
         <label>Your extra member discount (%)<input id="pp-extra" type="number" inputmode="numeric" min="0" max="30" value="5" /></label>
         <label>Visible from level<select id="pp-lvl">${LEVELS.map(l => `<option value="${l.n}">${l.name}</option>`).join('')}</select></label>
+        <label class="check"><input id="pp-active" type="checkbox" checked /> Show in the Store</label>
         <p class="muted">Members also get their level discount (−5 to −20 %). Total discount is capped at −${MAX_TOTAL_DISCOUNT} %.</p>
         <p class="error" id="pp-err" hidden></p>
-        <button class="btn" type="submit">Add product</button>
+        <button class="btn" type="submit" id="pp-save">Add product</button>
+        <button class="btn btn--ghost" type="button" id="pp-cancel" hidden>Cancel</button>
       </form>
-      ${brand ? await partnerChallengesHtml(brand.id) : '<section class="card"><h2>Challenges</h2><p class="muted">Add your first product, then you can create challenges.</p></section>'}`;
+      ${brand ? await partnerChallengesHtml(brand.id) : '<section class="card"><h2>Challenges</h2><p class="muted">Add your first product, then you can create challenges and give it away as a prize.</p></section>'}`;
     view.dataset.brand = brand ? brand.id : '';
   }
   view.innerHTML = `
@@ -252,22 +261,40 @@ async function renderPartner() {
     ${body}
     ${state.profile ? '<a class="btn btn--ghost" href="#home">Back to my training</a>' : signOut}`;
   wireOut();
-  view.querySelectorAll('[data-delp]').forEach(b => b.onclick = async () => {
-    if (!b.classList.contains('is-armed')) { b.classList.add('is-armed'); b.textContent = 'Confirm?'; setTimeout(() => { b.classList.remove('is-armed'); b.textContent = 'Delete'; }, 4000); return; }
-    b.disabled = true;
-    const { error } = await sb.from('products').delete().eq('id', b.dataset.delp);
-    if (error) { toast(error.message); b.disabled = false; return; }
-    toast('Product deleted'); route();
-  });
+  wireArmedDelete('[data-delp]', 'products', 'Product deleted');
   wirePartnerChallenges();
   const pform = document.getElementById('pp-form');
-  if (pform) pform.onsubmit = async e => {
+  if (!pform) return;
+  const $ = id => document.getElementById(id);
+  let photo = null;
+  const resetForm = () => {
+    pform.reset(); pform.dataset.edit = ''; photo = null;
+    $('pp-h').textContent = 'Add a product'; $('pp-save').textContent = 'Add product'; $('pp-cancel').hidden = true;
+    $('pp-prev').innerHTML = '<span class="noimg">No photo</span>';
+  };
+  $('pp-cancel').onclick = resetForm;
+  $('pp-photo').onchange = async () => {
+    const f = $('pp-photo').files[0]; if (!f) return;
+    try { photo = await squarePhoto(f); $('pp-prev').innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" />`; }
+    catch (e) { photo = null; toast('Could not read that photo. Try a JPG or PNG.'); }
+  };
+  view.querySelectorAll('[data-editp]').forEach(b => b.onclick = () => {
+    const pr = partnerProducts.find(x => x.id === b.dataset.editp); if (!pr) return;
+    resetForm(); pform.dataset.edit = pr.id;
+    $('pp-name').value = pr.name; $('pp-cat').value = pr.category; $('pp-size').value = pr.size || '';
+    $('pp-price').value = pr.price_eur; $('pp-extra').value = pr.extra_discount_pct; $('pp-lvl').value = pr.min_level;
+    $('pp-active').checked = pr.active;
+    $('pp-prev').innerHTML = photoTag(pr);
+    $('pp-h').textContent = 'Edit ' + pr.name; $('pp-save').textContent = 'Save changes'; $('pp-cancel').hidden = false;
+    pform.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  pform.onsubmit = async e => {
     e.preventDefault();
-    const err = document.getElementById('pp-err'); err.hidden = true;
+    const err = $('pp-err'); err.hidden = true;
     const fail = m => { err.textContent = m; err.hidden = false; busy(pform, false); };
-    const name = document.getElementById('pp-name').value.trim();
-    const price = parseFloat(document.getElementById('pp-price').value);
-    const extra = parseInt(document.getElementById('pp-extra').value, 10) || 0;
+    const name = $('pp-name').value.trim();
+    const price = parseFloat($('pp-price').value);
+    const extra = parseInt($('pp-extra').value, 10) || 0;
     if (name.length < 2) return fail('Enter the product name.');
     if (!(price > 0)) return fail('Enter the normal price.');
     if (extra < 0 || extra > 30) return fail('Extra discount must be between 0 and 30 %.');
@@ -278,70 +305,154 @@ async function renderPartner() {
       if (be) return fail(be.message);
       brandId = nb.id;
     }
-    const { error } = await sb.from('products').insert({
-      brand_id: brandId, name, category: document.getElementById('pp-cat').value,
-      size: document.getElementById('pp-size').value.trim() || null, price_eur: price,
-      extra_discount_pct: extra, min_level: parseInt(document.getElementById('pp-lvl').value, 10),
-    });
+    const row = { name, category: $('pp-cat').value, size: $('pp-size').value.trim() || null, price_eur: price,
+      extra_discount_pct: extra, min_level: parseInt($('pp-lvl').value, 10), active: $('pp-active').checked };
+    const old = partnerProducts.find(x => x.id === pform.dataset.edit);
+    if (photo) {
+      const path = `${brandId}/${crypto.randomUUID()}.${photo.type === 'image/webp' ? 'webp' : 'jpg'}`;
+      const { error: ue } = await sb.storage.from('product-photos').upload(path, photo, { contentType: photo.type });
+      if (ue) return fail('Photo upload failed: ' + ue.message);
+      row.image_url = sb.storage.from('product-photos').getPublicUrl(path).data.publicUrl;
+    }
+    const { error } = old ? await sb.from('products').update(row).eq('id', old.id)
+      : await sb.from('products').insert({ ...row, brand_id: brandId });
     if (error) return fail(error.message);
-    toast('Product added'); route();
+    if (photo && old && old.image_url) removePhoto(old.image_url);
+    toast(old ? 'Product saved' : 'Product added'); route();
   };
 }
 
+// ---- partner helpers ----
+let partnerProducts = [], partnerChallenges = [];
+const PHOTO_PREFIX = '/storage/v1/object/public/product-photos/';
+const photoTag = pr => pr && pr.image_url ? `<img src="${esc(pr.image_url)}" alt="${esc(pr.name)}" loading="lazy" />` : '<span class="noimg">No photo</span>';
+function removePhoto(url) {
+  const i = url.indexOf(PHOTO_PREFIX); if (i < 0) return;
+  sb.storage.from('product-photos').remove([url.slice(i + PHOTO_PREFIX.length)]);
+}
+// Centre-crop to a 1000 px square (what the Store shows) and re-encode small
+async function squarePhoto(file) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(bmp.width, bmp.height), out = Math.min(1000, s);
+  const c = document.createElement('canvas'); c.width = c.height = out;
+  c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, out, out);
+  const enc = type => new Promise(r => c.toBlob(r, type, 0.85));
+  let blob = await enc('image/webp');
+  if (!blob || blob.type !== 'image/webp') blob = await enc('image/jpeg');
+  return blob;
+}
+function wireArmedDelete(sel, table, done) {
+  view.querySelectorAll(sel).forEach(b => b.onclick = async () => {
+    if (!b.classList.contains('is-armed')) { b.classList.add('is-armed'); b.textContent = 'Confirm?'; setTimeout(() => { b.classList.remove('is-armed'); b.textContent = 'Delete'; }, 4000); return; }
+    b.disabled = true;
+    const id = b.dataset.delp || b.dataset.delc;
+    const pr = table === 'products' && partnerProducts.find(x => x.id === id);
+    const { error } = await sb.from(table).delete().eq('id', id);
+    if (error) { toast(error.message); b.disabled = false; return; }
+    if (pr && pr.image_url) removePhoto(pr.image_url);
+    toast(done); route();
+  });
+}
+
+const prizeText = c => c.prize_product_id && partnerProducts.find(p => p.id === c.prize_product_id)
+  ? `${c.prize_qty} × ${partnerProducts.find(p => p.id === c.prize_product_id).name}` : c.reward;
 async function partnerChallengesHtml(brandId) {
   const [{ data: mine }, ex] = await Promise.all([
-    sb.from('challenges').select('id, title, period, metric, goal, reward, winners, status').eq('brand_id', brandId).order('created_at'),
+    sb.from('challenges').select('*').eq('brand_id', brandId).order('created_at'),
     loadExercises(),
   ]);
+  partnerChallenges = mine || [];
+  const prizeOf = c => partnerProducts.find(p => p.id === c.prize_product_id);
   return `<section class="card"><h2>Your challenges</h2>
-      ${(mine || []).length ? `<ul class="list">${mine.map(c => `<li><div class="grow"><p>${esc(c.title)} <span class="chip cat">${PERIODS[c.period]}</span></p>
-        <p class="muted">${fmt(c.goal)} ${METRICS[c.metric]} · top ${c.winners} win ${esc(c.reward)} · <b>${esc(c.status)}</b></p></div>
-        <span class="row-actions"><button type="button" class="act act--del" data-delc="${c.id}">Delete</button></span></li>`).join('')}</ul>`
+      ${partnerChallenges.length ? `<ul class="list">${partnerChallenges.map(c => `<li><div class="thumb">${prizeOf(c) ? photoTag(prizeOf(c)) : '<span class="noimg">Prize</span>'}</div>
+        <div class="grow"><p>${esc(c.title)} <span class="chip cat">${PERIODS[c.period]}</span></p>
+        <p class="muted">${fmt(c.goal)} ${METRICS[c.metric]} · top ${c.winners} win ${esc(prizeText(c))} · <b>${esc(c.status)}</b></p></div>
+        <span class="row-actions"><button type="button" class="act act--edit" data-editc="${c.id}">Edit</button>
+        <button type="button" class="act act--del" data-delc="${c.id}">Delete</button></span></li>`).join('')}</ul>`
         : '<p class="muted">No challenges yet. The best challenges go to the top of members\' Rewards and Store.</p>'}
     </section>
-    <form id="pc-form" class="card" novalidate data-brand="${brandId}"><h2>Create a challenge</h2>
+    <form id="pc-form" class="card" novalidate data-brand="${brandId}" data-edit=""><h2 id="pc-h">Create a challenge</h2>
       <label>Title<input id="pc-title" maxlength="60" placeholder="20 Tonne Week" /></label>
       <label>Description (optional)<input id="pc-desc" maxlength="200" placeholder="Lift 20,000 kg in total this week." /></label>
       <label>Period<select id="pc-period">${Object.entries(PERIODS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Members must reach<select id="pc-metric">${Object.entries({ workouts: 'Number of workouts', sets: 'Number of sets', volume_kg: 'Kg lifted in total', cardio_minutes: 'Minutes of cardio', xp: 'XP earned', exercise_reps: 'Reps of one exercise' }).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label id="pc-exwrap" hidden>Exercise<select id="pc-ex">${Object.values(ex).filter(e => e.category !== 'cardio').map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></label>
       <label>Goal<input id="pc-goal" type="number" inputmode="numeric" min="1" placeholder="20000" /></label>
-      <label>Prize<input id="pc-reward" maxlength="80" placeholder="1 kg Whey Isolate" /></label>
-      <label>Prize value (€)<input id="pc-value" type="number" inputmode="decimal" min="0" step="0.01" placeholder="42.90" /></label>
+      <label>Free product for each winner<select id="pc-prize">
+        ${partnerProducts.map(p => `<option value="${p.id}">${esc(p.name)}${p.size ? ' · ' + esc(p.size) : ''} (${eur(p.price_eur)})</option>`).join('')}
+        <option value="">Something else (merch, voucher…)</option></select></label>
+      <div class="prize-pick" id="pc-prodwrap"><span class="thumb" id="pc-prev"></span>
+        <label>How many each winner gets<input id="pc-qty" type="number" inputmode="numeric" min="1" max="10" value="1" /></label></div>
+      <div id="pc-otherwrap" hidden>
+        <label>Prize<input id="pc-reward" maxlength="80" placeholder="Branded gym bag" /></label>
+        <label>Prize value (€)<input id="pc-value" type="number" inputmode="decimal" min="0" step="0.01" placeholder="25.00" /></label>
+      </div>
       <label>Number of winners<input id="pc-winners" type="number" inputmode="numeric" min="1" max="100" value="3" /></label>
       <label>Open from level<select id="pc-lvl">${LEVELS.map(l => `<option value="${l.n}">${l.name}</option>`).join('')}</select></label>
-      <p class="muted">Higher prize value and more winners rank your challenge higher. Waves approves every challenge before it goes live.</p>
+      <p class="muted" id="pc-note">Higher prize value and more winners rank your challenge higher. Waves approves every challenge before it goes live.</p>
       <p class="error" id="pc-err" hidden></p>
-      <button class="btn" type="submit">Send for approval</button>
+      <button class="btn" type="submit" id="pc-save">Send for approval</button>
+      <button class="btn btn--ghost" type="button" id="pc-cancel" hidden>Cancel</button>
     </form>`;
 }
 function wirePartnerChallenges() {
+  wireArmedDelete('[data-delc]', 'challenges', 'Challenge deleted');
   const f = document.getElementById('pc-form'); if (!f) return;
-  const metric = document.getElementById('pc-metric');
-  metric.onchange = () => { document.getElementById('pc-exwrap').hidden = metric.value !== 'exercise_reps'; };
-  view.querySelectorAll('[data-delc]').forEach(b => b.onclick = async () => {
-    if (!b.classList.contains('is-armed')) { b.classList.add('is-armed'); b.textContent = 'Confirm?'; setTimeout(() => { b.classList.remove('is-armed'); b.textContent = 'Delete'; }, 4000); return; }
-    b.disabled = true; const { error } = await sb.from('challenges').delete().eq('id', b.dataset.delc);
-    toast(error ? error.message : 'Challenge deleted'); route();
+  const $ = id => document.getElementById(id);
+  const metric = $('pc-metric'), prize = $('pc-prize');
+  const sync = () => {
+    $('pc-exwrap').hidden = metric.value !== 'exercise_reps';
+    const pr = partnerProducts.find(p => p.id === prize.value);
+    $('pc-prodwrap').hidden = !pr; $('pc-otherwrap').hidden = !!pr;
+    $('pc-prev').innerHTML = pr ? photoTag(pr) : '';
+  };
+  metric.onchange = sync; prize.onchange = sync; sync();
+  const NOTE_NEW = $('pc-note').textContent;
+  const resetForm = () => {
+    f.reset(); f.dataset.edit = ''; sync();
+    $('pc-h').textContent = 'Create a challenge'; $('pc-save').textContent = 'Send for approval'; $('pc-cancel').hidden = true; $('pc-note').textContent = NOTE_NEW;
+  };
+  $('pc-cancel').onclick = resetForm;
+  view.querySelectorAll('[data-editc]').forEach(b => b.onclick = () => {
+    const c = partnerChallenges.find(x => x.id === b.dataset.editc); if (!c) return;
+    resetForm(); f.dataset.edit = c.id;
+    $('pc-title').value = c.title; $('pc-desc').value = c.description || ''; $('pc-period').value = c.period;
+    metric.value = c.metric; if (c.exercise_id) $('pc-ex').value = c.exercise_id;
+    $('pc-goal').value = c.goal; prize.value = c.prize_product_id || ''; $('pc-qty').value = c.prize_qty || 1;
+    $('pc-reward').value = c.prize_product_id ? '' : c.reward; $('pc-value').value = c.prize_product_id ? '' : c.reward_value_eur;
+    $('pc-winners').value = c.winners; $('pc-lvl').value = c.min_level; sync();
+    $('pc-h').textContent = 'Edit ' + c.title; $('pc-save').textContent = 'Save and send for approval'; $('pc-cancel').hidden = false;
+    $('pc-note').textContent = c.status === 'approved'
+      ? 'This challenge is live. Saving changes takes it off members\' Rewards until Waves approves it again. Members who joined keep their progress.'
+      : 'Waves approves every challenge before it goes live.';
+    f.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   f.onsubmit = async e => {
     e.preventDefault();
-    const err = document.getElementById('pc-err'); err.hidden = true;
+    const err = $('pc-err'); err.hidden = true;
     const fail = m => { err.textContent = m; err.hidden = false; busy(f, false); };
-    const v = id => document.getElementById(id).value.trim();
+    const v = id => $(id).value.trim();
     if (v('pc-title').length < 3) return fail('Enter a title.');
     if (!(+v('pc-goal') > 0)) return fail('Enter a goal.');
-    if (v('pc-reward').length < 3) return fail('Describe the prize.');
+    const pr = partnerProducts.find(p => p.id === prize.value);
+    const qty = parseInt(v('pc-qty'), 10) || 1;
+    if (pr && !(qty >= 1 && qty <= 10)) return fail('Each winner can get 1 to 10 of the product.');
+    if (!pr && v('pc-reward').length < 3) return fail('Describe the prize.');
     const winners = parseInt(v('pc-winners'), 10);
     if (!(winners >= 1 && winners <= 100)) return fail('Winners must be between 1 and 100.');
     busy(f, true);
-    const { error } = await sb.from('challenges').insert({
-      brand_id: f.dataset.brand, title: v('pc-title'), description: v('pc-desc') || null, period: v('pc-period'),
+    const row = {
+      title: v('pc-title'), description: v('pc-desc') || null, period: v('pc-period'),
       metric: metric.value, exercise_id: metric.value === 'exercise_reps' ? v('pc-ex') : null, goal: +v('pc-goal'),
-      reward: v('pc-reward'), reward_value_eur: +v('pc-value') || 0, winners, min_level: parseInt(v('pc-lvl'), 10),
-    });
+      prize_product_id: pr ? pr.id : null, prize_qty: pr ? qty : 1,
+      reward: pr ? `${qty > 1 ? qty + ' × ' : ''}${pr.name}${pr.size ? ' ' + pr.size : ''}` : v('pc-reward'),
+      reward_value_eur: pr ? Math.round(pr.price_eur * qty * 100) / 100 : +v('pc-value') || 0,
+      winners, min_level: parseInt(v('pc-lvl'), 10),
+    };
+    const { error } = f.dataset.edit ? await sb.from('challenges').update(row).eq('id', f.dataset.edit)
+      : await sb.from('challenges').insert({ ...row, brand_id: f.dataset.brand });
     if (error) return fail(error.message);
-    toast('Challenge sent for approval'); route();
+    toast(f.dataset.edit ? 'Saved. Sent to Waves for approval.' : 'Challenge sent for approval'); route();
   };
 }
 
