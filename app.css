@@ -276,32 +276,40 @@ label.photo-pick { position: relative; flex-direction: row; cursor: pointer; }
 .ptabs::-webkit-scrollbar { display: none; }
 .ptab { flex: 1 1 0; min-width: max-content; padding: 0 8px; font-size: .88rem; }
 
-/* ---- intro splash: a wave swells, curls, crashes and settles; then the wordmark rises ---- */
-.intro { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-  padding-bottom: 24vh; background: var(--bg); overflow: hidden; cursor: pointer; transition: opacity .45s ease, transform .45s ease; }
-.intro.is-out { opacity: 0; transform: scale(1.04); pointer-events: none; }
-.intro__glow { position: absolute; width: 140vmax; height: 140vmax; border-radius: 50%;
+/* ---- intro splash: a gold wave swells, curls and crashes into the GAIN WAVES logo, which holds, then glides into the header ---- */
+.intro { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  padding-bottom: 22vh; overflow: hidden; cursor: pointer; }
+.intro::before { content: ""; position: absolute; inset: 0; background: var(--bg); transition: opacity .6s ease .15s; }
+.intro.is-out { pointer-events: none; }
+.intro.is-out::before, .intro.is-out .intro__glow { opacity: 0; }
+.intro__glow { position: absolute; width: 140vmax; height: 140vmax; border-radius: 50%; transition: opacity .5s ease;
   background: radial-gradient(circle, rgba(201,162,39,.20) 0%, rgba(201,162,39,.05) 28%, transparent 55%); animation: intro-glow 2.7s ease-out 1s both; }
-.intro__sea { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 52vh; }
-.intro__back { fill: #0F3560; opacity: .8; }
-.intro__foam { fill: #E6F6FD; }
-.intro__crest { fill: none; stroke: #DFF3FC; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
-.intro__wave { position: relative; font-size: clamp(80px, 24vw, 128px); line-height: 1;
-  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
-  filter: drop-shadow(0 10px 30px rgba(63,167,224,.35)); animation: intro-pop .9s cubic-bezier(.2,.9,.3,1.3) 1.35s both, intro-rock 1.6s ease-in-out 2.2s 1 none; }
-.intro__word { position: relative; display: flex; font-family: var(--display); font-weight: 700; font-size: clamp(44px, 14vw, 72px); letter-spacing: .04em; line-height: 1; }
-.intro__word span { display: inline-block; background: linear-gradient(180deg, #F5E6B0 0%, #C9A227 70%, #9C7A12 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: intro-letter .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(1.65s + var(--i) * .05s); }
+.intro__sea { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 52vh; transition: transform .7s cubic-bezier(.6,0,.4,1); }
+.intro.is-out .intro__sea { transform: translateY(105%); }
+.intro__back { fill: #2E2408; opacity: .9; }
+.intro__foam { fill: #FFF3CC; }
+.intro__crest { fill: none; stroke: #FFF3CC; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+/* same proportions as the header logo (.brand), so the hand-over is exact */
+.intro__brand { position: relative; display: flex; align-items: center; gap: .57em; font-family: var(--display); font-size: clamp(36px, 11vw, 64px);
+  letter-spacing: .04em; line-height: 1; color: var(--ink); transform-origin: 0 0; transition: transform .8s cubic-bezier(.65,0,.25,1); will-change: transform; }
+.intro__mark { width: 1.14em; height: 1.36em; flex: none; border-radius: .34em .34em .51em .51em; background: var(--gold);
+  box-shadow: 0 0 40px rgba(201,162,39,.45); animation: intro-mark .8s cubic-bezier(.2,.9,.3,1.4) 1.3s both; }
+.intro__word { display: flex; }
+.intro__word span { display: inline-block; animation: intro-letter .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(1.6s + var(--i) * .05s); }
+.intro__line, .intro__tag { transition: opacity .25s ease; }
+.intro.is-out .intro__line, .intro.is-out .intro__tag { opacity: 0; }
 .intro__line { position: relative; width: min(62vw, 260px); color: var(--gold); }
 .intro__line path { stroke-dasharray: 300; stroke-dashoffset: 300; animation: intro-draw .8s ease-out 2.2s forwards; }
 .intro__tag { position: relative; margin: 0; font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--soft); animation: intro-fade .6s ease-out 2.5s both; }
 @keyframes intro-glow { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@keyframes intro-pop { from { transform: translateY(80px) scale(.3) rotate(-25deg); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes intro-rock { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-8deg) translateY(-4px); } 65% { transform: rotate(6deg) translateY(2px); } }
+@keyframes intro-mark { 0% { transform: translateY(46vh) scale(.2); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; opacity: 1; } }
 @keyframes intro-letter { from { transform: translateY(70%); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes intro-draw { to { stroke-dashoffset: 0; } }
 @keyframes intro-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .intro__glow, .intro__wave, .intro__word span, .intro__tag { animation: none; }
+  .intro__glow, .intro__mark, .intro__word span, .intro__tag { animation: none; }
   .intro__line path { animation: none; stroke-dashoffset: 0; }
+  .intro__brand, .intro__sea { transition: none; }
+  .intro.is-out { opacity: 0; transition: opacity .3s; }
 }
+.intro-on .top .brand { visibility: hidden; }

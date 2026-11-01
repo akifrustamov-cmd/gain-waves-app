@@ -20,7 +20,7 @@
     <div class="intro__glow"></div>
     <svg class="intro__sea" viewBox="-150 0 800 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
       <defs><linearGradient id="gw-water" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#9ED8F5"/><stop offset=".35" stop-color="#3FA7E0"/><stop offset="1" stop-color="#16467E"/></linearGradient></defs>
+        <stop offset="0" stop-color="#F5E6B0"/><stop offset=".35" stop-color="#C9A227"/><stop offset="1" stop-color="#5A4609"/></linearGradient></defs>
       <path class="intro__back" d="M-150 250 C 50 244, 250 256, 650 248 L650 300 L-150 300 Z"/>
       <path class="intro__water" fill="url(#gw-water)" d="M-150 230 C 60 228, 120 232, 160 230 C 180 229, 190 229, 200 229 C 210 229, 215 229, 220 229 C 225 229, 225 230, 220 230 C 230 230, 250 231, 280 230 C 320 229, 360 231, 650 230 L650 300 L-150 300 Z">
         <animate attributeName="d" dur="1.7s" begin="0.1s" fill="freeze" calcMode="spline" keyTimes="0;.28;.55;.78;1" keySplines=".4 0 .6 1;.4 0 .6 1;.4 0 .6 1;.4 0 .6 1" values="M-150 230 C 60 228, 120 232, 160 230 C 180 229, 190 229, 200 229 C 210 229, 215 229, 220 229 C 225 229, 225 230, 220 230 C 230 230, 250 231, 280 230 C 320 229, 360 231, 650 230 L650 300 L-150 300 Z;M-150 232 C 60 230, 120 226, 160 210 C 185 198, 205 190, 225 190 C 240 190, 250 196, 258 204 C 262 208, 262 210, 258 210 C 262 214, 275 222, 300 228 C 330 232, 360 231, 650 231 L650 300 L-150 300 Z;M-150 236 C 70 234, 140 230, 175 190 C 200 150, 205 95, 240 80 C 278 66, 320 88, 320 125 C 320 152, 296 160, 290 140 C 270 160, 262 205, 300 228 C 330 236, 360 234, 650 234 L650 300 L-150 300 Z;M-150 236 C 80 234, 160 230, 200 200 C 225 180, 245 140, 280 138 C 315 136, 345 170, 352 215 C 354 228, 340 232, 330 226 C 318 220, 322 232, 345 233 C 365 234, 380 234, 650 234 L650 300 L-150 300 Z;M-150 222 C 80 220, 160 218, 220 220 C 250 221, 270 220, 290 220 C 310 220, 330 221, 340 221 C 345 221, 345 222, 340 222 C 350 222, 370 222, 380 222 C 390 222, 395 222, 650 222 L650 300 L-150 300 Z"/>
@@ -30,8 +30,7 @@
         <animate attributeName="d" dur="1.7s" begin="0.1s" fill="freeze" calcMode="spline" keyTimes="0;.28;.55;.78;1" keySplines=".4 0 .6 1;.4 0 .6 1;.4 0 .6 1;.4 0 .6 1" values="M-150 230 C 60 228, 120 232, 160 230 C 180 229, 190 229, 200 229 C 210 229, 215 229, 220 229 C 225 229, 225 230, 220 230 C 230 230, 250 231, 280 230 C 320 229, 360 231, 650 230;M-150 232 C 60 230, 120 226, 160 210 C 185 198, 205 190, 225 190 C 240 190, 250 196, 258 204 C 262 208, 262 210, 258 210 C 262 214, 275 222, 300 228 C 330 232, 360 231, 650 231;M-150 236 C 70 234, 140 230, 175 190 C 200 150, 205 95, 240 80 C 278 66, 320 88, 320 125 C 320 152, 296 160, 290 140 C 270 160, 262 205, 300 228 C 330 236, 360 234, 650 234;M-150 236 C 80 234, 160 230, 200 200 C 225 180, 245 140, 280 138 C 315 136, 345 170, 352 215 C 354 228, 340 232, 330 226 C 318 220, 322 232, 345 233 C 365 234, 380 234, 650 234;M-150 222 C 80 220, 160 218, 220 220 C 250 221, 270 220, 290 220 C 310 220, 330 221, 340 221 C 345 221, 345 222, 340 222 C 350 222, 370 222, 380 222 C 390 222, 395 222, 650 222"/>
       </path>
     </svg>
-    <div class="intro__wave">🌊</div>
-    <div class="intro__word">GAIN WAVES</div>
+    <div class="intro__brand"><span class="intro__mark"></span><span class="intro__word">GAIN WAVES</span></div>
     <svg class="intro__line" viewBox="0 0 240 24" fill="none"><path d="M2 12 C 22 0, 38 0, 58 12 S 98 24, 118 12 S 158 0, 178 12 S 218 24, 238 12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
     <p class="intro__tag">No pain, no gain waves.</p>
   </div>
@@ -40,12 +39,24 @@
       var el = document.getElementById('intro'), seen = false;
       try { seen = sessionStorage.getItem('gw-intro'); sessionStorage.setItem('gw-intro', '1'); } catch (e) {}
       if (seen) { el.remove(); return; }
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) el.querySelectorAll('.intro__sea animate').forEach(function (an) { var v = an.getAttribute('values').split(';'); an.parentNode.setAttribute('d', v[v.length - 1]); an.remove(); });
+      document.documentElement.classList.add('intro-on');
+      var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) el.querySelectorAll('.intro__sea animate').forEach(function (an) { if (an.getAttribute('attributeName') === 'd') { var v = an.getAttribute('values').split(';'); an.parentNode.setAttribute('d', v[v.length - 1]); } an.remove(); });
       var w = el.querySelector('.intro__word'), t = w.textContent; w.textContent = '';
       t.split('').forEach(function (c, i) { var s = document.createElement('span'); s.textContent = c === ' ' ? '\u00a0' : c; s.style.setProperty('--i', i); w.appendChild(s); });
-      var done = function () { if (!el.isConnected || el.classList.contains('is-out')) return; el.classList.add('is-out'); setTimeout(function () { el.remove(); }, 1000); };
+      var done = function () {
+        if (!el.isConnected || el.classList.contains('is-out')) return;
+        // glide the big logo onto the header logo, so the intro hands over to the app
+        var row = el.querySelector('.intro__brand'), target = document.querySelector('.top .brand__mark');
+        if (target && !reduce) {
+          var a = row.getBoundingClientRect(), m = row.querySelector('.intro__mark').getBoundingClientRect(), b = target.getBoundingClientRect(), k = b.height / m.height;
+          row.style.transform = 'translate(' + (b.left - a.left - k * (m.left - a.left)) + 'px,' + (b.top - a.top - k * (m.top - a.top)) + 'px) scale(' + k + ')';
+        }
+        el.classList.add('is-out');
+        setTimeout(function () { el.remove(); document.documentElement.classList.remove('intro-on'); }, reduce ? 300 : 900);
+      };
       el.addEventListener('click', done);
-      setTimeout(done, matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 3300);
+      setTimeout(done, reduce ? 1500 : 4800);
     })();
   </script>
   <header class="top">
