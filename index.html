@@ -16,6 +16,25 @@
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
+  <div id="intro" class="intro" aria-hidden="true">
+    <div class="intro__glow"></div>
+    <div class="intro__wave">🌊</div>
+    <div class="intro__word">GAIN WAVES</div>
+    <svg class="intro__line" viewBox="0 0 240 24" fill="none"><path d="M2 12 C 22 0, 38 0, 58 12 S 98 24, 118 12 S 158 0, 178 12 S 218 24, 238 12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+    <p class="intro__tag">No pain, no gain waves.</p>
+  </div>
+  <script>
+    (function () {
+      var el = document.getElementById('intro'), seen = false;
+      try { seen = sessionStorage.getItem('gw-intro'); sessionStorage.setItem('gw-intro', '1'); } catch (e) {}
+      if (seen) { el.remove(); return; }
+      var w = el.querySelector('.intro__word'), t = w.textContent; w.textContent = '';
+      t.split('').forEach(function (c, i) { var s = document.createElement('span'); s.textContent = c === ' ' ? '\u00a0' : c; s.style.setProperty('--i', i); w.appendChild(s); });
+      var done = function () { if (!el.isConnected || el.classList.contains('is-out')) return; el.classList.add('is-out'); setTimeout(function () { el.remove(); }, 450); };
+      el.addEventListener('click', done);
+      setTimeout(done, matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 2700);
+    })();
+  </script>
   <header class="top">
     <div class="brand"><span class="brand__mark"></span>GAIN WAVES</div>
     <div class="top__xp" id="top-xp" hidden></div>
