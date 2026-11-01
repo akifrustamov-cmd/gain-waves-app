@@ -162,6 +162,32 @@ async function renderStore(filter = 'all', showBasket = false) {
   };
 }
 
+// ---- panel building blocks: tab bar + bottom sheet ----
+const STATUS_LABEL = { pending: 'Waiting approval', approved: 'Live', rejected: 'Rejected' };
+const panelTab = {};
+function tabsHtml(key, tabs) {
+  if (!tabs[panelTab[key]]) panelTab[key] = Object.keys(tabs)[0];
+  return `<div class="ptabs" role="tablist" data-tabs="${key}">${Object.entries(tabs).map(([k, l]) =>
+    `<button type="button" role="tab" class="ptab ${k === panelTab[key] ? 'is-on' : ''}" aria-selected="${k === panelTab[key]}" data-ptab="${k}">${l}</button>`).join('')}</div>`;
+}
+function wireTabs(key) {
+  const show = () => view.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== panelTab[key]; });
+  const btns = view.querySelectorAll(`[data-tabs="${key}"] [data-ptab]`);
+  btns.forEach(b => b.onclick = () => {
+    panelTab[key] = b.dataset.ptab;
+    btns.forEach(x => { x.classList.toggle('is-on', x === b); x.setAttribute('aria-selected', x === b); });
+    show();
+  });
+  show();
+}
+const sheetHtml = (id, inner) => `<div class="sheet" id="sheet-${id}" hidden><div class="sheet__bg" data-close="${id}"></div><div class="sheet__panel" role="dialog" aria-modal="true">${inner}</div></div>`;
+function openSheet(id) {
+  const s = document.getElementById('sheet-' + id); s.hidden = false; document.body.classList.add('no-scroll');
+  s.querySelector('.sheet__panel').scrollTop = 0;
+}
+function closeSheet(id) { const s = document.getElementById('sheet-' + id); if (s) s.hidden = true; document.body.classList.remove('no-scroll'); }
+function wireSheets() { view.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeSheet(b.dataset.close)); }
+
 // ---- Partner dashboard ----
 async function renderPartner() {
   const pa = state.partner;
@@ -226,41 +252,57 @@ async function renderPartner() {
     let { data: brand } = await sb.from('brands').select('id, name, tagline').eq('partner_id', pa.id).maybeSingle();
     const { data: prods } = brand ? await sb.from('products').select('*').eq('brand_id', brand.id).order('created_at') : { data: [] };
     partnerProducts = prods || [];
+    const ch = brand ? await partnerChallengesHtml(brand.id) : null;
+    if (!brand) partnerChallenges = [];
+    const countSt = st => partnerChallenges.filter(c => c.status === st).length;
     body = `
-      <section class="card"><h2>Your products</h2>
+      <div class="stats">
+        <div class="stat"><b>${partnerProducts.filter(p => p.active).length}</b><span>in the Store</span></div>
+        <div class="stat"><b>${countSt('approved')}</b><span>live challenges</span></div>
+        <div class="stat"><b>${countSt('pending')}</b><span>waiting approval</span></div>
+      </div>
+      ${tabsHtml('partner', { products: `Products <span class="badge">${partnerProducts.length}</span>`, challenges: `Challenges <span class="badge">${partnerChallenges.length}</span>` })}
+      <section class="card" data-pane="products">
+        <div class="pane-head"><h2>Products</h2><button type="button" class="act act--edit" id="pp-new">+ Add product</button></div>
         ${partnerProducts.length ? `<ul class="list">${partnerProducts.map(pr => `<li><div class="thumb">${photoTag(pr)}</div>
           <div class="grow"><p>${esc(pr.name)} <span class="muted">${esc(pr.size || '')}</span></p>
-          <p class="muted">${eur(pr.price_eur)} · extra −${pr.extra_discount_pct} % · from ${LEVELS[pr.min_level - 1].name}${pr.active ? '' : ' · <b>hidden</b>'}</p></div>
+          <p class="muted">${eur(pr.price_eur)} · −${pr.extra_discount_pct} % extra · ${LEVELS[pr.min_level - 1].name}+</p>
+          ${pr.active ? '' : '<span class="chip st-rejected">Hidden</span>'}</div>
           <span class="row-actions"><button type="button" class="act act--edit" data-editp="${pr.id}">Edit</button>
           <button type="button" class="act act--del" data-delp="${pr.id}">Delete</button></span></li>`).join('')}</ul>`
-          : '<p class="muted">No products yet. Add your first one below.</p>'}
+          : '<p class="muted">No products yet. Tap “+ Add product”.</p>'}
       </section>
-      <form id="pp-form" class="card" novalidate data-edit=""><h2 id="pp-h">Add a product</h2>
-        <label>Photo
-          <span class="photo-pick"><span class="photo-pick__img" id="pp-prev"><span class="noimg">No photo</span></span>
-          <span class="photo-pick__txt">Square photos look best. It is cropped to a square like in the Store.</span></span>
-          <input id="pp-photo" type="file" accept="image/*" /></label>
+      <section class="card" data-pane="challenges">
+        <div class="pane-head"><h2>Challenges</h2>${brand ? '<button type="button" class="act act--edit" id="pc-new">+ New challenge</button>' : ''}</div>
+        ${brand ? ch.list : '<p class="muted">Add your first product, then you can create challenges and give it away as a prize.</p>'}
+      </section>
+      ${sheetHtml('pp', `<form id="pp-form" class="sheet-form" novalidate data-edit="">
+        <div class="sheet__head"><h2 id="pp-h">Add a product</h2><button type="button" class="sheet__x" data-close="pp" aria-label="Close">×</button></div>
+        <label class="photo-pick"><span class="photo-pick__img" id="pp-prev"><span class="noimg">No photo</span></span>
+          <span class="photo-pick__txt"><span class="act act--del">Choose photo</span>Square photos look best.</span>
+          <input id="pp-photo" class="vh" type="file" accept="image/*" /></label>
         <label>Product name<input id="pp-name" placeholder="Whey Isolate Vanilla" /></label>
-        <label>Category<select id="pp-cat">${Object.entries(CATEGORIES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
-        <label>Size<input id="pp-size" placeholder="1 kg" /></label>
-        <label>Normal price (€)<input id="pp-price" type="number" inputmode="decimal" min="0.5" step="0.01" placeholder="39.90" /></label>
-        <label>Your extra member discount (%)<input id="pp-extra" type="number" inputmode="numeric" min="0" max="30" value="5" /></label>
+        <div class="frow"><label>Category<select id="pp-cat">${Object.entries(CATEGORIES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+          <label>Size<input id="pp-size" placeholder="1 kg" /></label></div>
+        <div class="frow"><label>Price (€)<input id="pp-price" type="number" inputmode="decimal" min="0.5" step="0.01" placeholder="39.90" /></label>
+          <label>Extra −%<input id="pp-extra" type="number" inputmode="numeric" min="0" max="30" value="5" /></label></div>
         <label>Visible from level<select id="pp-lvl">${LEVELS.map(l => `<option value="${l.n}">${l.name}</option>`).join('')}</select></label>
         <label class="check"><input id="pp-active" type="checkbox" checked /> Show in the Store</label>
-        <p class="muted">Members also get their level discount (−5 to −20 %). Total discount is capped at −${MAX_TOTAL_DISCOUNT} %.</p>
+        <p class="hint">Members also get their level discount (−5 to −20 %). Total is capped at −${MAX_TOTAL_DISCOUNT} %.</p>
         <p class="error" id="pp-err" hidden></p>
-        <button class="btn" type="submit" id="pp-save">Add product</button>
-        <button class="btn btn--ghost" type="button" id="pp-cancel" hidden>Cancel</button>
-      </form>
-      ${brand ? await partnerChallengesHtml(brand.id) : '<section class="card"><h2>Challenges</h2><p class="muted">Add your first product, then you can create challenges and give it away as a prize.</p></section>'}`;
+        <div class="btnrow"><button class="btn btn--ghost" type="button" data-close="pp">Cancel</button><button class="btn" type="submit" id="pp-save">Add product</button></div>
+      </form>`)}
+      ${brand ? ch.sheet : ''}`;
     view.dataset.brand = brand ? brand.id : '';
   }
   view.innerHTML = `
-    <div><p class="eyebrow">${PARTNER_KINDS[pa.kind]} · Partner</p><h1>${esc(pa.name)}</h1></div>
-    <section class="card status status--${pa.status}"><h3>${pa.status === 'approved' ? 'Live' : pa.status === 'pending' ? 'Pending approval' : 'Not approved'}</h3><p>${statusLine}</p></section>
+    <div class="phead"><div><p class="eyebrow">${PARTNER_KINDS[pa.kind]} · Partner</p><h1>${esc(pa.name)}</h1></div>
+      <span class="chip st-${pa.status}">${pa.status === 'approved' ? 'Live' : pa.status === 'pending' ? 'Waiting approval' : 'Not approved'}</span></div>
+    ${pa.status === 'approved' ? '' : `<p class="hint">${statusLine}</p>`}
     ${body}
     ${state.profile ? '<a class="btn btn--ghost" href="#home">Back to my training</a>' : signOut}`;
   wireOut();
+  if (pa.kind !== 'gym') { wireTabs('partner'); wireSheets(); }
   wireArmedDelete('[data-delp]', 'products', 'Product deleted');
   wirePartnerChallenges();
   const pform = document.getElementById('pp-form');
@@ -269,10 +311,10 @@ async function renderPartner() {
   let photo = null;
   const resetForm = () => {
     pform.reset(); pform.dataset.edit = ''; photo = null;
-    $('pp-h').textContent = 'Add a product'; $('pp-save').textContent = 'Add product'; $('pp-cancel').hidden = true;
+    $('pp-h').textContent = 'Add a product'; $('pp-save').textContent = 'Add product';
     $('pp-prev').innerHTML = '<span class="noimg">No photo</span>';
   };
-  $('pp-cancel').onclick = resetForm;
+  $('pp-new').onclick = () => { resetForm(); openSheet('pp'); };
   $('pp-photo').onchange = async () => {
     const f = $('pp-photo').files[0]; if (!f) return;
     try { photo = await squarePhoto(f); $('pp-prev').innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" />`; }
@@ -285,8 +327,8 @@ async function renderPartner() {
     $('pp-price').value = pr.price_eur; $('pp-extra').value = pr.extra_discount_pct; $('pp-lvl').value = pr.min_level;
     $('pp-active').checked = pr.active;
     $('pp-prev').innerHTML = photoTag(pr);
-    $('pp-h').textContent = 'Edit ' + pr.name; $('pp-save').textContent = 'Save changes'; $('pp-cancel').hidden = false;
-    pform.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('pp-h').textContent = 'Edit product'; $('pp-save').textContent = 'Save';
+    openSheet('pp');
   });
   pform.onsubmit = async e => {
     e.preventDefault();
@@ -363,37 +405,37 @@ async function partnerChallengesHtml(brandId) {
   ]);
   partnerChallenges = mine || [];
   const prizeOf = c => partnerProducts.find(p => p.id === c.prize_product_id);
-  return `<section class="card"><h2>Your challenges</h2>
-      ${partnerChallenges.length ? `<ul class="list">${partnerChallenges.map(c => `<li><div class="thumb">${prizeOf(c) ? photoTag(prizeOf(c)) : '<span class="noimg">Prize</span>'}</div>
-        <div class="grow"><p>${esc(c.title)} <span class="chip cat">${PERIODS[c.period]}</span></p>
-        <p class="muted">${fmt(c.goal)} ${METRICS[c.metric]} · top ${c.winners} win ${esc(prizeText(c))} · <b>${esc(c.status)}</b></p></div>
+  const list = partnerChallenges.length ? `<ul class="list">${partnerChallenges.map(c => `<li><div class="thumb">${prizeOf(c) ? photoTag(prizeOf(c)) : '<span class="noimg">Prize</span>'}</div>
+        <div class="grow"><p>${esc(c.title)}</p>
+        <p class="muted">${PERIODS[c.period]} · ${fmt(c.goal)} ${METRICS[c.metric]} · top ${c.winners} win ${esc(prizeText(c))}</p>
+        <span class="chip st-${esc(c.status)}">${STATUS_LABEL[c.status] || esc(c.status)}</span>${c.featured ? ' <span class="chip amb">Featured</span>' : ''}</div>
         <span class="row-actions"><button type="button" class="act act--edit" data-editc="${c.id}">Edit</button>
         <button type="button" class="act act--del" data-delc="${c.id}">Delete</button></span></li>`).join('')}</ul>`
-        : '<p class="muted">No challenges yet. The best challenges go to the top of members\' Rewards and Store.</p>'}
-    </section>
-    <form id="pc-form" class="card" novalidate data-brand="${brandId}" data-edit=""><h2 id="pc-h">Create a challenge</h2>
+    : '<p class="muted">No challenges yet. The best challenges go to the top of members\' Rewards and Store.</p>';
+  const sheet = sheetHtml('pc', `<form id="pc-form" class="sheet-form" novalidate data-brand="${brandId}" data-edit="">
+      <div class="sheet__head"><h2 id="pc-h">New challenge</h2><button type="button" class="sheet__x" data-close="pc" aria-label="Close">×</button></div>
       <label>Title<input id="pc-title" maxlength="60" placeholder="20 Tonne Week" /></label>
       <label>Description (optional)<input id="pc-desc" maxlength="200" placeholder="Lift 20,000 kg in total this week." /></label>
-      <label>Period<select id="pc-period">${Object.entries(PERIODS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Members must reach<select id="pc-metric">${Object.entries({ workouts: 'Number of workouts', sets: 'Number of sets', volume_kg: 'Kg lifted in total', cardio_minutes: 'Minutes of cardio', xp: 'XP earned', exercise_reps: 'Reps of one exercise' }).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label id="pc-exwrap" hidden>Exercise<select id="pc-ex">${Object.values(ex).filter(e => e.category !== 'cardio').map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></label>
-      <label>Goal<input id="pc-goal" type="number" inputmode="numeric" min="1" placeholder="20000" /></label>
+      <div class="frow"><label>Goal<input id="pc-goal" type="number" inputmode="numeric" min="1" placeholder="20000" /></label>
+        <label>Period<select id="pc-period">${Object.entries(PERIODS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label></div>
       <label>Free product for each winner<select id="pc-prize">
         ${partnerProducts.map(p => `<option value="${p.id}">${esc(p.name)}${p.size ? ' · ' + esc(p.size) : ''} (${eur(p.price_eur)})</option>`).join('')}
         <option value="">Something else (merch, voucher…)</option></select></label>
       <div class="prize-pick" id="pc-prodwrap"><span class="thumb" id="pc-prev"></span>
-        <label>How many each winner gets<input id="pc-qty" type="number" inputmode="numeric" min="1" max="10" value="1" /></label></div>
-      <div id="pc-otherwrap" hidden>
-        <label>Prize<input id="pc-reward" maxlength="80" placeholder="Branded gym bag" /></label>
-        <label>Prize value (€)<input id="pc-value" type="number" inputmode="decimal" min="0" step="0.01" placeholder="25.00" /></label>
+        <label>Each winner gets<input id="pc-qty" type="number" inputmode="numeric" min="1" max="10" value="1" /></label></div>
+      <div class="frow" id="pc-otherwrap" hidden>
+        <label>Prize<input id="pc-reward" maxlength="80" placeholder="Gym bag" /></label>
+        <label>Value (€)<input id="pc-value" type="number" inputmode="decimal" min="0" step="0.01" placeholder="25.00" /></label>
       </div>
-      <label>Number of winners<input id="pc-winners" type="number" inputmode="numeric" min="1" max="100" value="3" /></label>
-      <label>Open from level<select id="pc-lvl">${LEVELS.map(l => `<option value="${l.n}">${l.name}</option>`).join('')}</select></label>
-      <p class="muted" id="pc-note">Higher prize value and more winners rank your challenge higher. Waves approves every challenge before it goes live.</p>
+      <div class="frow"><label>Winners<input id="pc-winners" type="number" inputmode="numeric" min="1" max="100" value="3" /></label>
+        <label>Open from<select id="pc-lvl">${LEVELS.map(l => `<option value="${l.n}">${l.name}</option>`).join('')}</select></label></div>
+      <p class="hint" id="pc-note">Higher prize value and more winners rank your challenge higher. Waves approves every challenge before it goes live.</p>
       <p class="error" id="pc-err" hidden></p>
-      <button class="btn" type="submit" id="pc-save">Send for approval</button>
-      <button class="btn btn--ghost" type="button" id="pc-cancel" hidden>Cancel</button>
-    </form>`;
+      <div class="btnrow"><button class="btn btn--ghost" type="button" data-close="pc">Cancel</button><button class="btn" type="submit" id="pc-save">Send</button></div>
+    </form>`);
+  return { list, sheet };
 }
 function wirePartnerChallenges() {
   wireArmedDelete('[data-delc]', 'challenges', 'Challenge deleted');
@@ -410,9 +452,9 @@ function wirePartnerChallenges() {
   const NOTE_NEW = $('pc-note').textContent;
   const resetForm = () => {
     f.reset(); f.dataset.edit = ''; sync();
-    $('pc-h').textContent = 'Create a challenge'; $('pc-save').textContent = 'Send for approval'; $('pc-cancel').hidden = true; $('pc-note').textContent = NOTE_NEW;
+    $('pc-h').textContent = 'New challenge'; $('pc-save').textContent = 'Send'; $('pc-note').textContent = NOTE_NEW;
   };
-  $('pc-cancel').onclick = resetForm;
+  $('pc-new').onclick = () => { resetForm(); openSheet('pc'); };
   view.querySelectorAll('[data-editc]').forEach(b => b.onclick = () => {
     const c = partnerChallenges.find(x => x.id === b.dataset.editc); if (!c) return;
     resetForm(); f.dataset.edit = c.id;
@@ -421,11 +463,11 @@ function wirePartnerChallenges() {
     $('pc-goal').value = c.goal; prize.value = c.prize_product_id || ''; $('pc-qty').value = c.prize_qty || 1;
     $('pc-reward').value = c.prize_product_id ? '' : c.reward; $('pc-value').value = c.prize_product_id ? '' : c.reward_value_eur;
     $('pc-winners').value = c.winners; $('pc-lvl').value = c.min_level; sync();
-    $('pc-h').textContent = 'Edit ' + c.title; $('pc-save').textContent = 'Save and send for approval'; $('pc-cancel').hidden = false;
+    $('pc-h').textContent = 'Edit challenge'; $('pc-save').textContent = 'Save';
     $('pc-note').textContent = c.status === 'approved'
       ? 'This challenge is live. Saving changes takes it off members\' Rewards until Waves approves it again. Members who joined keep their progress.'
       : 'Waves approves every challenge before it goes live.';
-    f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    openSheet('pc');
   });
   f.onsubmit = async e => {
     e.preventDefault();
@@ -464,32 +506,46 @@ async function renderAdmin() {
   ]);
   const { data: chs } = await sb.from('challenges').select('id, title, period, reward, reward_value_eur, winners, status, featured, brands(name)').order('created_at', { ascending: false });
   const amb = { invited: 'Invited', ambassador: 'Ambassador', declined: 'Declined' };
+  const pendFirst = (a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1);
+  const plist = (partners || []).slice().sort(pendFirst), clist = (chs || []).slice().sort(pendFirst);
+  const pendP = plist.filter(p => p.status === 'pending').length, pendC = clist.filter(c => c.status === 'pending').length;
+  const ambN = (board || []).filter(m => m.status === 'ambassador').length;
+  if (!panelTab.admin) panelTab.admin = pendP || !pendC ? 'partners' : 'challenges';
+  const badge = n => n ? ` <span class="badge badge--hot">${n}</span>` : '';
   view.innerHTML = `
-    <div><p class="eyebrow">Waves admin</p><h1>Partners and ambassadors</h1></div>
-    <section class="card"><h2>Partner approvals</h2>
-      ${(partners || []).length ? `<ul class="list">${partners.map(pa => `
-        <li><div class="grow"><p>${esc(pa.name)} <span class="chip cat">${PARTNER_KINDS[pa.kind]}</span></p>
-          <p class="muted">${esc(pa.country || '')}${pa.website ? ' · ' + esc(pa.website) : ''} · <b>${esc(pa.status)}</b></p></div>
+    <div class="phead"><div><p class="eyebrow">Waves admin</p><h1>Control panel</h1></div></div>
+    <div class="stats">
+      <button type="button" class="stat" data-goto="partners"><b>${pendP}</b><span>partners waiting</span></button>
+      <button type="button" class="stat" data-goto="challenges"><b>${pendC}</b><span>challenges waiting</span></button>
+      <button type="button" class="stat" data-goto="ambassadors"><b>${ambN}</b><span>ambassadors</span></button>
+    </div>
+    ${tabsHtml('admin', { partners: 'Partners' + badge(pendP), challenges: 'Challenges' + badge(pendC), ambassadors: 'Ambassadors' })}
+    <section class="card" data-pane="partners"><h2>Partners</h2>
+      ${plist.length ? `<ul class="list">${plist.map(pa => `
+        <li><div class="grow"><p>${esc(pa.name)}</p>
+          <p class="muted">${PARTNER_KINDS[pa.kind]}${pa.country ? ' · ' + esc(pa.country) : ''}${pa.website ? ' · ' + esc(pa.website) : ''}</p>
+          <span class="chip st-${esc(pa.status)}">${STATUS_LABEL[pa.status] || esc(pa.status)}</span></div>
           <span class="row-actions">
             ${pa.status !== 'approved' ? `<button type="button" class="act act--edit" data-pst="${pa.id}:approved">Approve</button>` : ''}
             ${pa.status !== 'rejected' ? `<button type="button" class="act act--del" data-pst="${pa.id}:rejected">Reject</button>` : ''}
           </span></li>`).join('')}</ul>` : '<p class="muted">No partner sign-ups yet.</p>'}
     </section>
-    <section class="card"><h2>Brand challenges</h2>
-      ${(chs || []).length ? `<ul class="list">${chs.map(c => `<li><div class="grow"><p>${esc(c.title)} <span class="chip cat">${PERIODS[c.period]}</span>${c.featured ? ' <span class="chip amb">Featured</span>' : ''}</p>
-        <p class="muted">${esc(c.brands ? c.brands.name : '')} · top ${c.winners} win ${esc(c.reward)} (${eur(c.reward_value_eur)}) · <b>${esc(c.status)}</b></p></div>
+    <section class="card" data-pane="challenges"><h2>Brand challenges</h2>
+      ${clist.length ? `<ul class="list">${clist.map(c => `<li><div class="grow"><p>${esc(c.title)}</p>
+        <p class="muted">${esc(c.brands ? c.brands.name : '')} · ${PERIODS[c.period]} · top ${c.winners} win ${esc(c.reward)} (${eur(c.reward_value_eur)})</p>
+        <span class="chip st-${esc(c.status)}">${STATUS_LABEL[c.status] || esc(c.status)}</span>${c.featured ? ' <span class="chip amb">Featured</span>' : ''}</div>
         <span class="row-actions">
           ${c.status !== 'approved' ? `<button type="button" class="act act--edit" data-cst="${c.id}:approved">Approve</button>` : `<button type="button" class="act act--edit" data-cfeat="${c.id}:${!c.featured}">${c.featured ? 'Unfeature' : 'Feature'}</button>`}
           ${c.status !== 'rejected' ? `<button type="button" class="act act--del" data-cst="${c.id}:rejected">Reject</button>` : ''}
         </span></li>`).join('')}</ul>` : '<p class="muted">No challenges yet.</p>'}
     </section>
-    <section class="card"><h2>Ambassador board</h2>
-      <p class="muted">Strongest members first. Followers are self-reported; check their profile before inviting.</p>
+    <section class="card" data-pane="ambassadors"><h2>Ambassador board</h2>
+      <p class="hint">Strongest members first. Followers are self-reported; check their profile before inviting.</p>
       ${bErr ? `<p class="error">${esc(bErr.message)}</p>` : `<ul class="list">${(board || []).map((m, i) => `
         <li><span class="rank">${i + 1}</span>
-          <div class="grow"><p>${esc(m.display_name)} <span class="muted">@${esc(m.username)}</span> ${m.natty ? '<span class="chip extra">Natty</span>' : ''}</p>
-            <p class="muted">${esc(m.gym || 'No gym')} · ${fmt(m.workouts_30d)} workouts in 30 days · ${m.followers != null ? fmt(m.followers) + ' followers' : 'no followers listed'}${m.instagram ? ' · @' + esc(m.instagram) : ''}</p>
-            <p><span class="chip lv-${m.level}">${LEVELS[m.level - 1].name}</span> <span class="xp">${fmt(m.xp)} XP</span> ${m.status ? `<span class="chip amb">${amb[m.status]}</span>` : ''}</p></div>
+          <div class="grow"><p>${esc(m.display_name)} <span class="muted">@${esc(m.username)}</span></p>
+            <p class="muted">${esc(m.gym || 'No gym')} · ${fmt(m.workouts_30d)} workouts/30 d · ${m.followers != null ? fmt(m.followers) + ' followers' : 'no followers'}${m.instagram ? ' · @' + esc(m.instagram) : ''}</p>
+            <p><span class="chip lv-${m.level}">${LEVELS[m.level - 1].name}</span> <span class="xp">${fmt(m.xp)} XP</span>${m.natty ? ' <span class="chip extra">Natty</span>' : ''}${m.status ? ` <span class="chip amb">${amb[m.status]}</span>` : ''}</p></div>
           <span class="row-actions">
             ${m.status !== 'invited' && m.status !== 'ambassador' ? `<button type="button" class="act act--edit" data-amb="${m.user_id}:invited">Invite</button>` : ''}
             ${m.status === 'invited' ? `<button type="button" class="act act--edit" data-amb="${m.user_id}:ambassador">Make ambassador</button>` : ''}
@@ -497,6 +553,8 @@ async function renderAdmin() {
           </span></li>`).join('')}</ul>`}
     </section>
     <a class="btn btn--ghost" href="${state.profile ? '#profile' : '#partner'}">Back</a>`;
+  wireTabs('admin');
+  view.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => view.querySelector(`[data-ptab="${b.dataset.goto}"]`).click());
   view.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.pst) {

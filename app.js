@@ -93,6 +93,7 @@ async function loadRoles() {
 }
 async function route() {
   view.onclick = null;
+  document.body.classList.remove('no-scroll');
   const { data } = await sb.auth.getSession();
   state.session = data.session;
   if (!state.session) { setChrome(false); return renderAuth('signin', intent.get() === 'partner'); }
